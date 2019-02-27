@@ -32,11 +32,11 @@ compile_openh264()
 	mkdir -p "openh264"
 	cd "${LIBRARIRS_PATH}/openh264"
 	
-	PREFIX="${THIRD_PATH}/openh264"
+	DES_DIR="${THIRD_PATH}/openh264"
 	
 	make -j${THREAD_COUNT}
 	echo ">>>>> install openh264"
-	make DESTDIR=${PREFIX} PREFIX= install
+	make DES_DIR=${PREFIX} PREFIX="${THIRD_PATH}/openh264" install
 	
 	unset PREFIX
 }
@@ -77,6 +77,7 @@ compile_xcb_proto()
 	PREFIX="${THIRD_PATH}/xcb_proto"
 	COMFIGURE_CMD="--prefix=${PREFIX}"
 	
+	autoreconf
 	./configure ${COMFIGURE_CMD}
 	
 	make -j${THREAD_COUNT}
@@ -89,6 +90,8 @@ compile_xcb_proto()
 
 compile_libxcb()
 {
+	compile_xcb_proto
+	
 	echo ">>>>> compile_libxcb"
 	cd $THIRD_PATH
 	if [ -d "${THIRD_PATH}/libxcb" ]; then
@@ -101,6 +104,9 @@ compile_libxcb()
 	XPROTO_LDPATH="${THIRD_PATH}/xcb_proto/lib/pkgconfig"
 	COMFIGURE_CMD="--prefix=${PREFIX} PKG_CONFIG_PATH=${XPROTO_LDPATH}"
 	
+	autoscan
+	aclocal
+	automake –add-missing
 	./configure ${COMFIGURE_CMD}
 	
 	make -j${THREAD_COUNT}
@@ -120,9 +126,9 @@ compile_alsa()
 	fi
 	mkdir -p "alsa"
 	cd "${LIBRARIRS_PATH}/alsa"
-	
+	pwd
 	PREFIX="${THIRD_PATH}/alsa"
-	COMFIGURE_CMD="--prefix=${PREFIX} --enable-static=yes"
+	COMFIGURE_CMD="--prefix=${PREFIX} --enable-static=yes --enable-shared=no"
 	
 	./configure ${COMFIGURE_CMD}
 	
@@ -134,9 +140,62 @@ compile_alsa()
 	unset COMFIGURE_CMD
 }
 
+# plist compiler
+compile_libxml2()
+{
+	echo ">>>>> compile_libxml2"
+	cd $THIRD_PATH
+	if [ -d "${THIRD_PATH}/libxml2" ]; then
+		rm -rf "${THIRD_PATH}/libxml2"
+	fi
+	mkdir -p "libxml2"
+	cd "${LIBRARIRS_PATH}/libxml2"
+	
+	PREFIX="${THIRD_PATH}/libxml2"
+	CFLAGS="-I/usr/include/python2.7"
+	COMFIGURE_CMD="--prefix=${PREFIX} CFLAGS=${CFLAGS}"
+	
+	./configure ${COMFIGURE_CMD}
+	
+	make -j${THREAD_COUNT}
+	echo ">>>>> install libxml2"
+	make install
+	
+	unset CFLAGS
+	unset PREFIX
+	unset COMFIGURE_CMD
+}
+
+compile_plist()
+{
+	compile_libxml2
+	echo ">>>>> compile_libplist"
+	cd $THIRD_PATH
+	if [ -d "${THIRD_PATH}/libplist" ]; then
+		rm -rf "${THIRD_PATH}/libplist"
+	fi
+	mkdir -p "libplist"
+	cd "${LIBRARIRS_PATH}/libplist"
+	pwd
+	rm -rf "CMakeCache.txt"
+	
+	cmake .  -DCMAKE_INSTALL_PREFIX=""
+	make -j${THREAD_COUNT}
+	echo ">>>>> install libplist"
+	make DESTDIR="${THIRD_PATH}/libplist" PREFIX= install
+	
+	unset PREFIX
+	unset COMFIGURE_CMD
+}
+
 
 compile_ffmpeg()
 {
+	#compile_libxcb
+	compile_openh264
+	#compile_fdk_aac
+	#compile_alsa
+	
 	echo ">>>>> compile_ffmpeg"
 	cd $THIRD_PATH
 	if [ -d "${THIRD_PATH}/ffmpeg" ]; then
@@ -150,13 +209,15 @@ compile_ffmpeg()
 	H264_LDPATH="${THIRD_PATH}/openh264/lib/pkgconfig"
 	XCB_LDPATH="${THIRD_PATH}/libxcb/lib/pkgconfig"
 	ALSA_LDPATH="${THIRD_PATH}/alsa/lib/pkgconfig"
-	PKG_CONFIG_DIR="/usr/local/lib/pkgconfig:${FDK_AAC_LDPATH}:${H264_LDPATH}:${XCB_LDPATH}:${ALSA_LDPATH}"
+	PKG_CONFIG_DIR="${FDK_AAC_LDPATH}:${H264_LDPATH}:${XCB_LDPATH}:${ALSA_LDPATH}"
 	export PKG_CONFIG_PATH=${PKG_CONFIG_DIR}
-	
-	COMFIGURE_CMD="--prefix=${PREFIX} --enable-libfdk-aac --enable-libopenh264 --enable-libxcb --enable-gpl --enable-nonfree 
+	echo ${PKG_CONFIG_DIR}
+	COMFIGURE_CMD="--prefix=${PREFIX} --enable-libfdk-aac --enable-libopenh264 --enable-libxcb --enable-libxcb-shm --enable-libxcb-xfixes
+		--enable-libxcb-shape --enable-gpl --enable-nonfree --disable-zlib --disable-bzlib --disable-iconv --disable-avfilter
 		--pkg-config=/usr/bin/pkg-config  --arch=${ARCH} --cpu=${CPU} --target-os=${Platform} --disable-doc --disable-htmlpages
-		--disable-manpages --disable-podpages --disable-txtpages --enable-shared "
-	echo $COMFIGURE_CMD
+		--disable-manpages --disable-podpages --disable-txtpages --disable-postproc --disable-swresample --disable-swscale
+		--disable-ffmpeg --disable-ffplay --disable-ffprobe --disable-programs --disable-xlib --disable-sdl2 --disable-bzlib"
+
 	./configure ${COMFIGURE_CMD}
 	
 	make -j${THREAD_COUNT}
@@ -169,27 +230,23 @@ compile_ffmpeg()
 
 compile_app()
 {
-	cd ${APP_PATH}
+	echo ">>>>>>compiler third env"
+	#compile_plist
+	compile_ffmpeg
+	echo ">>>>>>compiler finish"
 	
+	cd ${WORK_PATH}
+	
+	rm "CMakeCache.txt"
 	cmake . \
 		-DCMAKE_C_COMPILER=${CMAKE_C_COMPILER} \
 		-DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER} \
 		-DCMAKE_C_FLAGS="${CMAKE_C_FLAGS}" \
         -DCMAKE_CXX_FLAGS="${CMAKE_CXX_FLAGS}" \
-		-DCMAKE_C_COMPILE_OBJECT=${CMAKE_C_COMPILE_OBJECT} \
+		-DARCH=${ARCH} \
 		
+	make -j4
+	
 }
 
-compile_openh264
-
-compile_fdk_aac
-
-compile_alsa
-
-# must ahead of linxcb install
-compile_xcb_proto
-
-compile_libxcb
-
-compile_ffmpeg
-#compile_app
+compile_app
